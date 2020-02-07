@@ -323,7 +323,7 @@ print(topl3d.shape)
 
 ###Modflow package building
 dis=flopy.modflow.ModflowDis(swt1, nlay, nrow, ncol, delr=delr, delc=delc, top=topl3d, botm=botml3d, nper=1, perlen=36500, nstp=10, steady=True, itmuni=4)
-swt1.dis.plot()
+#swt1.dis.plot()
 
 #Create Bas package
 basl3d[:, :, 0]= -1
@@ -403,35 +403,27 @@ drn=flopy.modflow.ModflowDrn(swt1, stress_period_data=drn_data2)
 
 #Well(WEL) package
 #stress_period_data={0:[[10, 67, 76, -137], [10, 65, 76, -137], [10, 66, 76, -137], [10, 64, 76, -137], [10, 63, 76, -137], [10, 62, 76, -137], [10, 68, 76, -137], [10, 69, 76, -137], [10, 70, 76, -137], [10, 70, 76, -137]]}
-#wel=flopy.modflow.ModflowWel(swt1, stress_period_data=stress_period_data)
-
+#swt1.wel.get_default_dtype()
+wel_file=(r'C:\\Users\\NLFEGL\\Desktop\\PWN_cutout2\\Results\\model\\Wel_test.csv')
+wel_data=pd.read_csv(wel_file, sep=';')
+wel_data=wel_data.loc[:, ['k', 'i', 'j', 'flux']]
+weldatfile=datafolder / 'wel.dat'
+np.savetxt(weldatfile, wel_data.values, fmt='  %i %i %i %16.8f', delimiter=' ')
+wel_data=wel_data.to_records(index=False)
+wel_ext={0:wel_data}
+wel_data2=wel_data.astype([('k', '<i4'), ('i', '<i4'), ('j', '<i4'), ('flux', '<f4')])
+wel=flopy.modflow.ModflowWel(swt1, stress_period_data=wel_data2)
 ### build Variable density flow, transport and other required Seawat packages
 #Variable density flow
-#
-#vdf=flopy.seawat.SeawatVdf(swt1, vdf=vdf3d, iwtable=0, densemin=0, densemax=0, denseslp=0.7143, firstdt=300, drhodc=1.405)
+vdf=flopy.seawat.SeawatVdf(swt1, vdf=vdf3d, iwtable=0, densemin=0, densemax=0, denseslp=0.7143, firstdt=300, drhodc=1.405)
 
-#btn= flopy.mt3d.Mt3dBtn(swt1, nprs=-5, prsity=0.35, sconc=35,  ifmtcn=0, chkmas=True, nprobs=10, nprmas=10, dt0=300, ncomp=1, mcomp=1)
-#adv= flopy.mt3d.Mt3dAdv(swt1, mixelm=0)
-#dsp= flopy.mt3d.Mt3dDsp(swt1, al=0.01, trpt=0.01, trpv=0.01, dmcoef=6.6e-6)
-#gcg= flopy.mt3d.Mt3dGcg(swt1, iter1=1000, mxiter=1, isolve=1, cclose=1.e-5)
+btn= flopy.mt3d.Mt3dBtn(swt1, nprs=-5, prsity=0.35, sconc=35,  ifmtcn=0, chkmas=True, nprobs=10, nprmas=10, dt0=300, ncomp=1, mcomp=1)
+adv= flopy.mt3d.Mt3dAdv(swt1, mixelm=0)
+dsp= flopy.mt3d.Mt3dDsp(swt1, al=0.01, trpt=0.01, trpv=0.01, dmcoef=6.6e-6)
+gcg= flopy.mt3d.Mt3dGcg(swt1, iter1=1000, mxiter=1, isolve=1, cclose=1.e-5)
 
-
-#itype = flopy.mt3d.Mt3dSsm.itype_dict()
-#qinflow=5.702
-#wel_data = {}
-#ssm_data = {}
-#wel_sp1 = []
-#ssm_sp1 = []
-#for k in range(nlay):
-#    wel_sp1.append([k, 0, 0, qinflow / nlay])
-#    ssm_sp1.append([k, 0, 0, 0., itype['WEL']])
-#    ssm_sp1.append([k, 0, ncol - 1, 35., itype['BAS6']])
-#wel_data[0] = wel_sp1
-#ssm_data[0] = ssm_sp1
-#wel = flopy.modflow.ModflowWel(swt1, stress_period_data=wel_data, ipakcb=53)
-#wel_data
-#ssm= flopy.mt3d.Mt3dSsm(swt1)
-#ssm_data[0]
+ssm= flopy.mt3d.Mt3dSsm(swt1)
+swt1.ssm.get_default_dtype()
 
 
 ###Run model
