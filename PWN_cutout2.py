@@ -3,6 +3,7 @@ import sys
 import numpy as np
 import flopy 
 import matplotlib.pyplot as plt
+import matplotlib as mpl
 import flopy.utils.binaryfile as bf
 import pandas as pd
 import scipy.ndimage
@@ -11,18 +12,23 @@ import re
 import csv
 import gdal, ogr, os, osr
 import flopy.utils.util_array as fpu
+
 from pyproj import CRS, Transformer
 from osgeo.osr import SpatialReference, CoordinateTransformation
-from matplotlib import colors
+from pathlib import Path
 from matplotlib.colors import LogNorm
 from matplotlib.colors import BoundaryNorm
 from matplotlib.ticker import MaxNLocator
 
-workspace=('C:\\Users\\NLFEGL\\Desktop\\PWN_cutout2\\Results\\2D\\')
+workspace=(r'C:\\Users\\NLFEGL\\Desktop\\PWN_cutout2\\Results\\2D\\')
 os.chdir ('C:\\Users\\NLFEGL\\Desktop\\PWN_cutout2\\') 
-
+workspace2=Path(r'C:\\Users\\NLFEGL\\Desktop\\PWN_cutout2\\Results\\2D\\')
 mf = flopy.seawat.Seawat.load('C:\\Users\\NLFEGL\\Desktop\\PWN_flopy\\modflowtest.nam', exe_name='swt_v4')
 swt1= flopy.seawat.Seawat('C:\\Users\\NLFEGL\\Desktop\\PWN_cutout2\\Results\\model\\swt1', exe_name='swt_v4', model_ws='C:\\Users\\NLFEGL\\Desktop\\PWN_cutout2\\Results\\model')
+#Create workspace directory
+datafolder=workspace2 / 'data'
+datafolder.mkdir(exist_ok=True)
+
 #workspace=('C:\\Users\\NLFEGL\\Desktop\\PWN_cutout2\\Results\\2D\\')
 #os.chdir ('C:\\Users\\NLFEGL\\Desktop\\PWN_cutout2\\Results\\') 
 #modelname='..\\modflowtest.nam'
@@ -312,25 +318,23 @@ for h in range(len(rchlayer)):
 for h in range(len(rchlayer)):
     for g in range(len(hklayer[0])):
         topl3d[h, g, :]=top_array
-#print(topl3d.shape)
+print(topl3d.shape)
 
 
 ###Modflow package building
-dis=flopy.modflow.ModflowDis(swt1, nlay, nrow, ncol, delr=delr, delc=delc, top=topl3d, botm=botml3d, nper=1, perlen=86400, nstp=10, steady=True, itmuni=4)
-#swt1.dis.plot()
-#print(swt1.namefile)
+dis=flopy.modflow.ModflowDis(swt1, nlay, nrow, ncol, delr=delr, delc=delc, top=topl3d, botm=botml3d, nper=1, perlen=36500, nstp=10, steady=True, itmuni=4)
+swt1.dis.plot()
+
 #Create Bas package
-basl3d[:,:, 0 ]= -1
+basl3d[:, :, 0]= -1
+strt3d[:, :, 0]= 0
 bas=flopy.modflow.mfbas.ModflowBas(swt1,ibound=basl3d, strt=strt3d)
 
 #LFP package
 lpf=flopy.modflow.ModflowLpf(swt1, hk=hk3d, vka=vk3d, ipakcb=53)
 #swt1.lpf.plot()
 #plot hk, vk
-hor_cond=swt1.lpf.hk.array
-
-
-
+#hor_cond=swt1.lpf.hk.array
 #print(hor_cond[:, 0, :])
 #fig = plt.figure(figsize=(18, 5))
 #ax = fig.add_subplot(1, 1, 1)
@@ -348,10 +352,59 @@ hor_cond=swt1.lpf.hk.array
 pcg=flopy.modflow.ModflowPcg(swt1)
 
 #Output Control
-oc=flopy.modflow.ModflowOc(swt1, stress_period_data={(0, 0): ['save head', 'save budget']}, compact=True)
+oc=flopy.modflow.ModflowOc(swt1, stress_period_data={(0, 0): ['save head', 'save budget']}, compact=True, save_every=True)
 
 #RCH
 rch=flopy.modflow.ModflowRch(swt1, rech=rch3d)
+#swt1.rch.plot()
+
+# General Head Boundary (GHB) package
+#ghb=flopy.modflow.ModflowGhb(swt1, stress_period_data={0:[[1, 66, 131, -3, 10], [1, 66, 130, -3, 10], [1, 66, 129, -3, 10], [1, 65, 131, -3, 10], [1, 65, 130, -3, 10], [1, 65, 129, -3, 10], [1, 67, 131, -3, 10], [1, 67, 130, -3, 10], [1, 67, 129, -3, 10]]})
+# =============================================================================
+# ghb_dtype=flopy.modflow.ModflowGhb.get_default_dtype()
+# ghb_stress=np.zeros(len(hklayer[0]), dtype=ghb_dtype)
+# ghb_stress=ghb_stress.view(np.recarray)
+# ghb_stress
+# for j in range(len(hklayer[0])):
+#     ghb_stress[j]=(0, j, 1, 0, 0.6)
+# =============================================================================
+ghb_file=(r'C:\\Users\\NLFEGL\\Desktop\\PWN_cutout2\\Results\\model\\ghb_test.csv')    
+ghb_data=pd.read_csv(ghb_file, sep= ';') 
+ghb_data=ghb_data.loc[:, ['k', 'i', 'j', 'bhead', 'cond']]
+ghbdatfile= datafolder / 'ghb.dat'
+np.savetxt(ghbdatfile, ghb_data.values, fmt='  %i %i %i %16.8f %16.8f', delimiter= ' ')
+ghb_data=ghb_data.to_records(index=False)
+ghb_ext={0:ghb_data}
+ghb_data2=ghb_data.astype([('k', '<i4'), ('i', '<i4'), ('j', '<i4'), ('bhead', '<f4'), ('cond', '<f4')])
+ghb=flopy.modflow.ModflowGhb(swt1, stress_period_data=ghb_data2)
+      
+
+#Drain(DRN) package
+# =============================================================================
+# #drn=flopy.modflow.ModflowDrn(swt1, stress_period_data={0:[0, 66, 131, 0, 100000]})
+# drn_dtype=flopy.modflow.ModflowDrn.get_default_dtype()
+# drn_stress=np.zeros(10*len(hklayer[0]), dtype=drn_dtype)
+# drn_stress=drn_stress.view(np.recarray)
+# for i in range(len(hklayer[0])):
+#     drn_stress[i]=(0, i, 131, -3, 10)
+# drn_stress
+# drn= flopy.modflow.ModflowDrn(swt1, stress_period_data=drn_stress)
+# 
+# =============================================================================
+drn_file=(r'C:\\Users\\NLFEGL\\Desktop\\PWN_cutout2\\Results\\model\\Drn_test.csv')
+drn_data=pd.read_csv(drn_file, sep=';')
+drn_data=drn_data.loc[:, ['k', 'i', 'j', 'elev', 'cond']]
+drndatfile=datafolder / 'drn.dat'
+np.savetxt(drndatfile, drn_data.values, fmt='  %i %i %i %16.8f %16.8f', delimiter=' ')
+drn_data=drn_data.to_records(index=False)
+drn_ext={0:drn_data}
+drn_data2=drn_data.astype([('k', '<i4'), ('i', '<i4'), ('j', '<i4'), ('elev', '<f4'), ('cond', '<f4')])
+drn=flopy.modflow.ModflowDrn(swt1, stress_period_data=drn_data2)
+
+#Well(WEL) package
+#stress_period_data={0:[[10, 67, 76, -137], [10, 65, 76, -137], [10, 66, 76, -137], [10, 64, 76, -137], [10, 63, 76, -137], [10, 62, 76, -137], [10, 68, 76, -137], [10, 69, 76, -137], [10, 70, 76, -137], [10, 70, 76, -137]]}
+#wel=flopy.modflow.ModflowWel(swt1, stress_period_data=stress_period_data)
+
 ### build Variable density flow, transport and other required Seawat packages
 #Variable density flow
 #
@@ -390,66 +443,100 @@ swt1.run_model()
 d=swt1.dis.thickness.array
 kd = np.multiply(hk3d, d)
 c = d / vk3d
-#Transect
+#Transect (Nog niet werkend)
 fig = plt.figure(figsize=(18, 5))
 ax = fig.add_subplot(1, 1, 1)
-xsect = flopy.plot.PlotCrossSection(model=swt1, line={'Column': 1})
-csa = xsect.plot_array(c)
-#patches = xsect.plot_ibound()
+xsect = flopy.plot.PlotCrossSection(model=swt1, line={'Row': 0})
+csa = xsect.plot_array(kd)
 linecollection = xsect.plot_grid(linewidth=0.2)
-t = ax.set_title('Cross-Section with resistance')
-cb = plt.colorbar(csa, shrink=0.75)
-#Topview
-for i in range(nlay):
-    levels = MaxNLocator(nbins=15).tick_values(c.min(), c.max())
-    cmap = plt.get_cmap('Blues')
-    norm = BoundaryNorm(levels, ncolors=cmap.N, clip=True)
-    fig = plt.figure(figsize=(15, 10))
-    ax = fig.add_subplot(1, 1, 1, aspect='equal')
-    im = ax.imshow(c[i, :, :])
-    fig.colorbar(im, ax=ax, fraction=0.05, label="C(days)")
-    t=ax.set_title('Resistance(C) in layer '+str(i+1))
+t = ax.set_title('Cross-Section with Transmissivity')
+cb = plt.colorbar(csa, shrink=0.75 )
 
-for i in range(nlay):
-    levels = MaxNLocator(nbins=15).tick_values(kd.min(), kd.max())
-    cmap = plt.get_cmap('Blues')
-    norm = BoundaryNorm(levels, ncolors=cmap.N, clip=True)
-    fig = plt.figure(figsize=(15, 10))
-    ax = fig.add_subplot(1, 1, 1, aspect='equal')
-    im = ax.imshow(kd[i, :, :])
-    fig.colorbar(im, ax=ax, fraction=0.05, label="Kd(m/day)")
-    t=ax.set_title('Transmissivity in layer '+str(i+1))
+fig = plt.figure(figsize=(18, 5))
+ax = fig.add_subplot(1, 1, 1)
+xsect = flopy.plot.PlotCrossSection(model=swt1, line={'Row': 0})
+csa = xsect.plot_array(c)
+linecollection = xsect.plot_grid(linewidth=0.2)
+t = ax.set_title('Cross-Section with Resistance')
+cmap=plt.get_cmap('jet')
+bounds=[0.1, 1, 10, 100, 200, 500, 1000, 2000, 10000]
+norm=mpl.colors.BoundaryNorm(boundaries=bounds, ncolors=256)
+pcd =ax.pcolormesh(c[:, :, 0], cmap=cmap, norm=norm)
+fig.colorbar(pcd, ax=ax, fraction=0.05, label="Kd(m/day)")
+
+
+#cb=mpl.colorbar.ColorbarBase(ax, cmap=cmap, norm=norm, ticks=bounds, spacing='uniform', orientation='vertical')
+#cb.ax.set_ticks([0.1, 1, 10, 100, 200, 500, 1000, 2000, 10000], ['0.1' , '1', '10', '100', '200', '500', '1000', '2000', '10000'])
+
+# =============================================================================
+# #Topview
+# for i in range(nlay):
+#     cmap = plt.get_cmap('jet')
+#     fig = plt.figure(figsize=(15, 10))
+#     ax = fig.add_subplot(1, 1, 1, aspect='equal')
+#     im = ax.imshow(c[i, :, :])
+#     bounds=np.array([0.1, 1, 10, 100, 200, 500, 1000, 2000, 5000, 10000])
+#     norm=mpl.colors.BoundaryNorm(boundaries=bounds, ncolors=256)
+#     pcm=ax.pcolormesh(c[i, :, :], norm=norm, cmap=cmap)
+#     fig.colorbar(pcm, ax=ax, fraction=0.05, label="C(days)")
+#     t=ax.set_title('Resistance(C) in layer '+str(i+1))
+# 
+# for i in range(nlay):
+#     cmapd = plt.get_cmap('jet')
+#     fig = plt.figure(figsize=(15, 10))
+#     ax = fig.add_subplot(1, 1, 1, aspect='equal')
+#     im = ax.imshow(kd[i, :, :])
+#     bounds=np.array([0.1, 10, 100, 200, 300, 500, 1000, 2000, 5000])
+#     normd=mpl.colors.BoundaryNorm(boundaries=bounds, ncolors=256)
+#     pcd=ax.pcolormesh(kd[i, :, :], norm=normd, cmap=cmapd)
+#     fig.colorbar(pcd, ax=ax, fraction=0.05, label="Kd(m/day)")
+#     t=ax.set_title('Transmissivity in layer '+str(i+1))
+# =============================================================================
 ###Extract heads
 #fname='C:\\Users\\NLFEGL\\Desktop\\PWN_cutout2\\Results\\model\\swt1.hds'
-#headobj=bf.HeadFile(fname)
-#times=headobj.get_times()
-#head=headobj.get_data()
-#head[0, :, :]
-#print (head.shape)
 
-#levels= MaxNLocator(nbins=15).tick_values(head.min(), head.max())
-#cmap=plt.get_cmap('Blues')
-#norm=BoundaryNorm(levels, ncolors=cmap.N, clip=True)
-#fig=plt.figure(figsize=(20, 10))
-#ax=fig.add_subplot(1, 1, 1, aspect='equal')
-#im=ax.imshow(head[0, :, 40, :], interpolation='nearest', extent=(0, 81, 0, 15))
-#ax.set_title('heads at time=0')
-
-#os.chdir('C:\\Users\\NLFEGL\\Desktop\\PWN_cutout2\\Results\\model')
-#fname = 'swt1.hds'
-#headobj = bf.HeadFile(fname)
-#times = headobj.get_times()
-#head = headobj.get_data(totim=times[-1])
+###Head plots
+#Transect
+os.chdir('C:\\Users\\NLFEGL\\Desktop\\PWN_cutout2\\Results\\model')
+fname = 'swt1.hds'
+headobj = bf.HeadFile(fname)
+times = headobj.get_times()
+head = headobj.get_data(totim=times[-1])
 #levels = MaxNLocator(nbins=15).tick_values(head.min(), head.max())
 #cmap = plt.get_cmap('Blues')
 #norm = BoundaryNorm(levels, ncolors=cmap.N, clip=True)
-#fig = plt.figure(figsize=(20, 10))
-#ax = fig.add_subplot(1, 1, 1, aspect='equal')
-#im = ax.imshow(head[0, :, :])
-#fig.colorbar(im, ax=ax, fraction=0.05, label="Head (m)")
+fig = plt.figure(figsize=(10, 10))
+ax = fig.add_subplot(1, 1, 1, aspect='equal')
+xsect = flopy.plot.PlotCrossSection(model=swt1, line={'Row': 66})
+csa = xsect.plot_array(head)
+linecollection = xsect.plot_grid(linewidth=0.2)
+t = ax.set_title('Head crosssection')
+cb = plt.colorbar(csa, shrink=0.75 )
 
-#ax.set_title('Simulated Heads')
+###Head 
+#Topview
+headobj=bf.HeadFile(fname)
+times=headobj.get_times()
+head=headobj.get_data()
+fig=plt.figure(figsize=(10, 10))
+ax=fig.add_subplot(1, 1, 1, aspect='equal')
+im=ax.imshow(head[10, :, :], interpolation='nearest')
+ax.set_title('Heads Topview' )
+cb=plt.colorbar(im, shrink=0.75)
+ax.set_title('Simulated Heads')
 #plt.savefig('HeadDistribution.png')
+
+# =============================================================================
+# for i in range(nlay):
+#     headobj=bf.HeadFile(fname)
+#     times=headobj.get_times()
+#     head=headobj.get_data()
+#     fig=plt.figure(figsize=(10, 10))
+#     ax=fig.add_subplot(1, 1, 1, aspect='equal')
+#     im=ax.imshow(head[i, :, :], interpolation='nearest')
+#     cb=plt.colorbar(im, shrink=0.75)
+#     ax.set_title('Simulated Heads in layer ' +str(i+1))
+# =============================================================================
 
 #fig = plt.figure(figsize=(18, 5))
 #ax = fig.add_subplot(1, 1, 1)
@@ -468,41 +555,40 @@ for i in range(nlay):
 ##xsect.plot_array(water_table)
 #print(water_table)
 
-
-### Seawat visualization
-##Flow direction and concentrations
-# Load data
-#ucnobj = bf.UcnFile('C:\\Users\\NLFEGL\\Desktop\\PWN_cutout2\\Results\\model', model=swt1)
-#times = ucnobj.get_times()
-#concentration = ucnobj.get_data(totim=times[-1])
-#cbbobj = bf.CellBudgetFile('C:\\Users\\NLFEGL\\Desktop\\PWN_cutout2\\Results\\model\\swt1.cbc')
-#times = cbbobj.get_times()
-#qx = cbbobj.get_data(text='flow right face', totim=times[-1])[0]
-#qz = cbbobj.get_data(text='flow lower face', totim=times[-1])[0]
-# Average flows to cell centers
-#qx_avg = np.empty(qx.shape, dtype=qx.dtype)
-#qx_avg[:, :, 1:] = 0.5 * (qx[:, :, 0:ncol-1] + qx[:, :, 1:ncol])
-#qx_avg[:, :, 0] = 0.5 * qx[:, :, 0]
-#qz_avg = np.empty(qz.shape, dtype=qz.dtype)
-#qz_avg[1:, :, :] = 0.5 * (qz[0:nlay-1, :, :] + qz[1:nlay, :, :])
-#qz_avg[0, :, :] = 0.5 * qz[0, :, :]
-# parameters for the colorbar
-#levels = MaxNLocator(nbins=15).tick_values(concentration.min(), concentration.max())
-#cmap = plt.get_cmap('PiYG')
-#norm = BoundaryNorm(levels, ncolors=cmap.N, clip=True)
-# Make the plot
-#fig = plt.figure(figsize=(20, 10))
-#ax = fig.add_subplot(1, 1, 1, aspect='equal')
-#im = ax.imshow(concentration[:, 0, :], interpolation='nearest',
-#          extent=(0, Lx, 0, Lz))
-#fig.colorbar(im, ax=ax, fraction=0.05, label="Concentration (g/l)")
-#
-#y, x, z = dis.get_node_coordinates()
-#X, Z = np.meshgrid(x, z[:, 0, 0])
-#iskip = 3
-#ax.quiver(X[::iskip, ::iskip], Z[::iskip, ::iskip],
-#           qx_avg[::iskip, 0, ::iskip]*1E5, -qz_avg[::iskip, 0, ::iskip]*1E5,
-#           color='w', scale=3, headwidth=3, headlength=2,
-#           headaxislength=2, width=0.0025)
-
-#ax.set_title('Flow Direction and Concentration')
+# =============================================================================
+# ### Seawat visualization
+# #Flow direction and concentrations
+# #Load data
+# #ucnobj = bf.UcnFile('C:\\Users\\NLFEGL\\Desktop\\PWN_cutout2\\Results\\model', model=swt1)
+# #times = ucnobj.get_times()
+# #concentration = ucnobj.get_data(totim=times[-1])
+# cbbobj = bf.CellBudgetFile('C:\\Users\\NLFEGL\\Desktop\\PWN_cutout2\\Results\\model\\swt1.cbc')
+# times = cbbobj.get_times()
+# qx = cbbobj.get_data(text='flow right face', totim=times[-1])[0]
+# qz = cbbobj.get_data(text='flow lower face', totim=times[-1])[0]
+# # Average flows to cell centers
+# qx_avg = np.empty(qx.shape, dtype=qx.dtype)
+# qx_avg[:, :, 1:] = 0.5 * (qx[:, :, 0:ncol-1] + qx[:, :, 1:ncol])
+# qx_avg[:, :, 0] = 0.5 * qx[:, :, 0]
+# qz_avg = np.empty(qz.shape, dtype=qz.dtype)
+# qz_avg[1:, :, :] = 0.5 * (qz[0:nlay-1, :, :] + qz[1:nlay, :, :])
+# qz_avg[0, :, :] = 0.5 * qz[0, :, :]
+# # parameters for the colorbar
+# #levels = MaxNLocator(nbins=15).tick_values(concentration.min(), concentration.max())
+# #cmap = plt.get_cmap('PiYG')
+# #norm = BoundaryNorm(levels, ncolors=cmap.N, clip=True)
+# # Make the plot
+# fig = plt.figure(figsize=(20, 10))
+# ax = fig.add_subplot(1, 1, 1, aspect='equal')
+# #im = ax.imshow(concentration[:, 0, :], interpolation='nearest', extent=(0, len(hklayer[0]), 0, nlay))
+# im=ax.imshow(head[:, 66, :])
+# fig.colorbar(im, ax=ax, fraction=0.05, label="Concentration (g/l)")
+# 
+# y, x, z = dis.get_node_coordinates()
+# X, Z = np.meshgrid(x, z[:, 0, 0])
+# iskip = 3
+# ax.quiver(X[::iskip, ::iskip], Z[::iskip, ::iskip], qx_avg[::iskip, 0, ::iskip]*1E5, -qz_avg[::iskip, 0, ::iskip]*1E5, color='w', scale=3, headwidth=3, headlength=2, headaxislength=2, width=0.0025)
+# 
+# ax.set_title('Flow Direction')
+# 
+# =============================================================================
